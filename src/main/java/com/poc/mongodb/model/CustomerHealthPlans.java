@@ -14,8 +14,8 @@ public class CustomerHealthPlans {
 
     @Id
     private Integer id;
-    private Integer customerId;
-    private Integer planId;
-    private String enrollmentDate;
+    private Integer customer_id;
+    private Integer plan_id;
+    private String enrollment_date;
     private String status;
 }
