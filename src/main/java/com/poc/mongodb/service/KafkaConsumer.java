@@ -2,9 +2,12 @@ package com.poc.mongodb.service;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.poc.mongodb.model.HealthPlans;
 import com.poc.mongodb.repository.HealthPlansRepository;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.data.mongodb.core.MongoTemplate;
+import org.springframework.data.mongodb.core.query.Criteria;
+import org.springframework.data.mongodb.core.query.Query;
+import org.springframework.data.mongodb.core.query.Update;
 import org.springframework.kafka.annotation.KafkaListener;
 import org.springframework.stereotype.Service;
 
@@ -17,28 +20,44 @@ public class KafkaConsumer {
     @Autowired
     private HealthPlansRepository healthPlan_repo;
 
+    @Autowired
+    private MongoTemplate mongoTemplate;
+
     private final ObjectMapper objectMapper = new ObjectMapper();
+
+    private Integer id;
 
     @KafkaListener(topics = "benefit-events", groupId = "health-bene-group")
     public void consume(String message) {
         try {
             //HealthPlans healthPlans = objectMapper.readValue(message, HealthPlans.class);
             JsonNode rootNode=objectMapper.readTree(message);
-            Iterator<Map.Entry<String, JsonNode>> fields=rootNode.fields();
-            while(fields.hasNext()){
-                Map.Entry<String, JsonNode> field= fields.next();
-                if(field.getKey().equalsIgnoreCase("fields")){
-                    JsonNode value=field.getValue();
-                    Iterator<Map.Entry<String, JsonNode>> innerFields=value.fields();
-                    while(innerFields.hasNext()){
-                        Map.Entry<String, JsonNode> innerField= innerFields.next();
-                        System.out.println("Key: "+innerField.getKey()+" Value: "+innerField.getValue());
-                    }
-                }
-                System.out.println("Key: "+field.getKey()+" Value: "+field.getValue());
+            Integer id=rootNode.get("id").asInt();
+
+            JsonNode fieldsNode = rootNode.get("fields");
+
+            if (fieldsNode == null || !fieldsNode.isObject()) {
+                System.out.println("No 'fields' node or it's not a JSON object");
+                return;
             }
-            //healthPlan_repo.save(healthPlans);
-            //System.out.println("Saved to MongoDB: " + healthPlans);
+
+            Update update = new Update();
+            Iterator<Map.Entry<String, JsonNode>> fields=fieldsNode.fields();
+            while (fields.hasNext()) {
+                System.out.println("Inside while loop");
+                Map.Entry<String, JsonNode> entry = fields.next();
+                System.out.println("Updating field "+entry.getKey()+ " with value :"+entry.getValue());
+                update.set(entry.getKey(), entry.getValue().asText()); // or asText(), asInt(), etc.
+            }
+
+            Query query = new Query(Criteria.where("_id").is(id));
+            mongoTemplate.updateFirst(query, update, "health_plans");
+            System.out.println("Updated fields for ID " + id);
+            System.out.println("JSON received " + message);
+
+            mongoTemplate.insert(objectMapper.convertValue(rootNode, Map.class), "benefit-events");
+
+            System.out.println("Original event inserted into 'benefit-events' collection");
         } catch (Exception e) {
             System.err.println("Error processing message: " + e.getMessage());
         }
